@@ -154,6 +154,7 @@ export default function MissionPage({ params }: { params: { id: string } }) {
     }, [user, authLoading, params.id])
 
     if (authLoading || loading) return <MissionLoading />
+    if (!user) return null
     if (!mission) return <div className="p-10 text-center">Mission not found. <button onClick={() => router.push('/dashboard')} className="text-primary-600 underline">Return to Dashboard</button></div>
 
     return <MissionClient mission={mission} userId={user.uid} />
