@@ -2,6 +2,7 @@
 
 A production-ready learning platform that teaches Python programming through English using a Daily Mission System.
 
+
 ## Features
 
 - 📚 30-day structured Python curriculum
