@@ -97,9 +97,31 @@ export default function MissionClient({ mission, userId }: { mission: any; userI
 
     const [localProgress, setLocalProgress] = useState(progressData)
 
+    // Ensure user profile exists in DB before any progress save (needed for FK constraint)
+    const ensureUserProfile = async () => {
+        const { data: existing } = await supabase
+            .from('users')
+            .select('id')
+            .eq('id', userId)
+            .maybeSingle()
+        if (!existing) {
+            await supabase.from('users').upsert({
+                id: userId,
+                email: '',
+                full_name: 'Learner',
+                total_xp: 0,
+                current_streak: 0,
+                longest_streak: 0,
+                skill_level: 'Beginner',
+            }, { onConflict: 'id' })
+        }
+    }
+
     useEffect(() => {
         setMounted(true)
         if (mission?.progress?.[0]) setLocalProgress(mission.progress[0])
+        // Pre-ensure profile exists as soon as mission loads
+        ensureUserProfile().catch(console.error)
     }, [mission])
 
     const steps = [
@@ -128,14 +150,18 @@ export default function MissionClient({ mission, userId }: { mission: any; userI
             const targetMissionId = mission.id
             const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetMissionId)
 
+            // Ensure user profile exists first (FK constraint)
+            await ensureUserProfile()
+
             if (isUUID) {
-                await supabase.from('user_mission_progress').upsert({
+                const { error: stepErr } = await supabase.from('user_mission_progress').upsert({
                     user_id: userId,
                     mission_id: targetMissionId,
                     [fieldMap[step]]: true,
                     status: 'in-progress',
                     updated_at: new Date().toISOString()
                 }, { onConflict: 'user_id,mission_id' })
+                if (stepErr) console.error('Step save error:', stepErr)
             } else {
                 console.warn('Skipping DB save for non-UUID mission:', targetMissionId)
             }
@@ -176,6 +202,9 @@ export default function MissionClient({ mission, userId }: { mission: any; userI
             const targetMissionId = mission.id
             const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetMissionId)
 
+            // Ensure user profile exists first (FK constraint requires this)
+            await ensureUserProfile()
+
             if (isUUID) {
                 // 1. Mark current mission as completed
                 const { error: completeErr } = await supabase.from('user_mission_progress').upsert({
@@ -183,7 +212,7 @@ export default function MissionClient({ mission, userId }: { mission: any; userI
                     mission_id: targetMissionId,
                     status: 'completed',
                     completed_at: new Date().toISOString(),
-                    xp_earned: mission.xp_reward,
+                    xp_earned: mission.xp_reward || 0,
                     updated_at: new Date().toISOString(),
                     lesson_completed: true,
                     vocab_completed: true,
@@ -192,10 +221,26 @@ export default function MissionClient({ mission, userId }: { mission: any; userI
                     writing_task_completed: true
                 }, { onConflict: 'user_id,mission_id' })
 
-                if (completeErr) console.error('Error saving completion:', completeErr)
+                if (completeErr) {
+                    console.error('Completion upsert failed:', completeErr)
+                    // Fallback: try plain insert then update
+                    await supabase.from('user_mission_progress')
+                        .update({ status: 'completed', completed_at: new Date().toISOString(), xp_earned: mission.xp_reward || 0, lesson_completed: true, vocab_completed: true, coding_task_completed: true, quiz_completed: true, writing_task_completed: true, updated_at: new Date().toISOString() })
+                        .eq('user_id', userId)
+                        .eq('mission_id', targetMissionId)
+                }
+
+                // Verify the save actually worked
+                const { data: verify } = await supabase
+                    .from('user_mission_progress')
+                    .select('status')
+                    .eq('user_id', userId)
+                    .eq('mission_id', targetMissionId)
+                    .maybeSingle()
+                console.log('Completion verification:', verify?.status)
 
                 // 2. Award XP
-                const { data: userData } = await supabase.from('users').select('total_xp, current_streak').eq('id', userId).single()
+                const { data: userData } = await supabase.from('users').select('total_xp, current_streak').eq('id', userId).maybeSingle()
                 if (userData) {
                     await supabase.from('users').update({
                         total_xp: (userData.total_xp || 0) + (mission.xp_reward || 0),
@@ -205,7 +250,7 @@ export default function MissionClient({ mission, userId }: { mission: any; userI
                     }).eq('id', userId)
                 }
 
-                // 3. Unlock next mission
+                // 3. Unlock and resolve next mission URL
                 if (nextDayNum <= 30) {
                     const { data: nextMission } = await supabase
                         .from('missions')
