@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
+import { getLocalProgress } from '@/lib/progress-store'
 import DashboardClient from './DashboardClient'
 import DashboardLoading from './loading'
 
@@ -116,6 +117,12 @@ export default function DashboardPage() {
                             completedDayNums.push(d)
                         }
                     }
+                })
+
+                // ✅ MERGE: localStorage is primary source of truth (DB writes may fail silently)
+                const localProgress = getLocalProgress(user.uid)
+                localProgress.completedDays.forEach(d => {
+                    if (!completedDayNums.includes(d)) completedDayNums.push(d)
                 })
 
                 const lastCompletedDay = completedDayNums.length > 0 ? Math.max(...completedDayNums) : 0

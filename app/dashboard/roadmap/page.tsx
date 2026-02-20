@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
+import { getLocalProgress } from '@/lib/progress-store'
 import RoadmapClient from './RoadmapClient'
 import RoadmapLoading from './loading'
 
@@ -62,6 +63,11 @@ export default function RoadmapPage() {
 
                 const lastCompletedDay = completedDayNums.length > 0 ? Math.max(...completedDayNums) : 0
 
+                // ✅ MERGE: localStorage is primary source of truth
+                const localProg = getLocalProgress(user.uid)
+                const allCompletedDays = Array.from(new Set([...completedDayNums, ...localProg.completedDays]))
+                const effectiveLastCompletedDay = allCompletedDays.length > 0 ? Math.max(...allCompletedDays) : lastCompletedDay
+
                 // 4. Map missions to UI structure (ensure full 30 days)
                 const fullMissions: any[] = []
                 for (let d = 1; d <= 30; d++) {
@@ -76,7 +82,10 @@ export default function RoadmapPage() {
                     if (prog) {
                         status = prog.status
                     }
-                    if (status === 'locked' && d <= lastCompletedDay + 1) {
+                    // Use merged completed days for unlock logic
+                    if (allCompletedDays.includes(d)) {
+                        status = 'completed'
+                    } else if (status === 'locked' && d <= effectiveLastCompletedDay + 1) {
                         status = 'available'
                     }
 

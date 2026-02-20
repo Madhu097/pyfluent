@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { markMissionComplete } from '@/lib/progress-store'
 import {
     ArrowLeft, BookOpen, Brain, Code, FileText, CheckCircle,
     Play, RotateCcw, Terminal, Lightbulb, ChevronRight,
@@ -197,6 +198,9 @@ export default function MissionClient({ mission, userId }: { mission: any; userI
 
         const nextDayNum = (mission.day_number || 0) + 1
         let resolvedNextUrl = '/dashboard/roadmap'
+
+        // ✅ PRIMARY: Save to localStorage immediately — works regardless of DB
+        markMissionComplete(userId, mission.day_number || 0, mission.id, mission.xp_reward || 0)
 
         try {
             const targetMissionId = mission.id
