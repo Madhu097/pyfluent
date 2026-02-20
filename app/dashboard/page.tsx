@@ -121,26 +121,37 @@ export default function DashboardPage() {
                 const targetDay = lastCompletedDay + 1
 
                 // 6. Build UI Stats
-                const todayMissionData = allMissions.find(m => m.day_number === targetDay) || allMissions[0] || {
-                    id: `temp-${targetDay}`,
-                    day_number: targetDay,
-                    title: `Mission ${targetDay}: Python Pro`,
-                    description: 'Ready to learn?',
-                    xp_reward: 100
+                // Find first non-completed mission starting from targetDay
+                let actualTargetDay = targetDay
+                let todayMissionData: any = null
+
+                if (actualTargetDay > 30) {
+                    // All missions completed
+                    todayMissionData = null
+                } else {
+                    todayMissionData = allMissions.find(m => m.day_number === actualTargetDay) || {
+                        id: `temp-${actualTargetDay}`,
+                        day_number: actualTargetDay,
+                        title: `Mission ${actualTargetDay}: Python Pro`,
+                        description: 'Ready to learn?',
+                        xp_reward: 100
+                    }
                 }
 
-                const todayProgress = progressRows.find(p => p.mission_id === todayMissionData.id)
+                const todayProgress = todayMissionData
+                    ? progressRows.find(p => p.mission_id === todayMissionData.id)
+                    : null
 
                 const stats = {
                     currentStreak: profile?.current_streak ?? 0,
                     longestStreak: profile?.longest_streak ?? 0,
                     totalXP: profile?.total_xp ?? 0,
                     skillLevel: profile?.skill_level ?? 'Beginner',
-                    weeklyProgress: Math.min(((completedDayNums.filter(d => d > Math.floor((targetDay - 1) / 7) * 7).length) / 7) * 100, 100),
-                    todayMission: {
+                    weeklyProgress: Math.min(((completedDayNums.filter(d => d > Math.floor((actualTargetDay - 1) / 7) * 7).length) / 7) * 100, 100),
+                    todayMission: todayMissionData ? {
                         ...todayMissionData,
                         progress: todayProgress || { status: 'available' }
-                    },
+                    } : null,
                     completedMissions: completedDayNums.length,
                     totalMissions: 30,
                     missions: allMissions.map(m => ({

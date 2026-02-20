@@ -195,10 +195,18 @@ export default function DashboardClient({ user, stats }: DashboardClientProps) {
 
                                     <Link
                                         href={`/dashboard/mission/${todayMission.id}`}
-                                        className="btn btn-primary w-full flex items-center justify-center gap-2 text-sm sm:text-base"
+                                        className={`btn w-full flex items-center justify-center gap-2 text-sm sm:text-base ${
+                                            todayMission.progress?.status === 'completed'
+                                                ? 'bg-success-600 hover:bg-success-700 text-white'
+                                                : 'btn-primary'
+                                        }`}
                                     >
                                         <Play className="w-4 h-4" />
-                                        {todayMission.progress?.status === 'in-progress' ? 'Continue Mission' : 'Start Mission'}
+                                        {todayMission.progress?.status === 'completed'
+                                            ? 'Review Mission'
+                                            : todayMission.progress?.status === 'in-progress'
+                                                ? 'Continue Mission'
+                                                : 'Start Mission'}
                                     </Link>
                                 </div>
                             ) : (

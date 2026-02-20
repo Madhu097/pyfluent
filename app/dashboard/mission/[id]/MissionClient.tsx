@@ -82,6 +82,9 @@ export default function MissionClient({ mission, userId }: { mission: any; userI
     const [mounted, setMounted] = useState(false)
     const [currentStep, setCurrentStep] = useState<MissionStep>('lesson')
     const [saving, setSaving] = useState(false)
+    const [missionCompleted, setMissionCompleted] = useState(false)
+    const [nextMissionUrl, setNextMissionUrl] = useState<string | null>(null)
+    const [nextMissionDay, setNextMissionDay] = useState<number | null>(null)
     const router = useRouter()
     const supabase = createClient()
 
@@ -132,12 +135,10 @@ export default function MissionClient({ mission, userId }: { mission: any; userI
                     [fieldMap[step]]: true,
                     status: 'in-progress',
                     updated_at: new Date().toISOString()
-                }, { onConflict: 'user_id, mission_id' })
+                }, { onConflict: 'user_id,mission_id' })
             } else {
                 console.warn('Skipping DB save for non-UUID mission:', targetMissionId)
             }
-
-
 
             const currentIndex = steps.findIndex(s => s.id === step)
             if (currentIndex < steps.length - 1) setCurrentStep(steps[currentIndex + 1].id)
@@ -145,20 +146,39 @@ export default function MissionClient({ mission, userId }: { mission: any; userI
         } catch (err) {
             console.error('Step completion error:', err)
             const currentIndex = steps.findIndex(s => s.id === step)
-            if (currentIndex < steps.length - 1) setCurrentStep(steps[currentIndex + 1].id)
+            if (currentIndex < steps.length - 1) {
+                setCurrentStep(steps[currentIndex + 1].id)
+            } else {
+                // Last step failed to save — still complete the mission flow
+                await completeMission()
+            }
         } finally {
             setSaving(false)
         }
     }
 
     const completeMission = async () => {
+        // Update local state immediately so UI reflects completion
+        setLocalProgress((prev: any) => ({
+            ...prev,
+            status: 'completed',
+            lesson_completed: true,
+            vocab_completed: true,
+            coding_task_completed: true,
+            quiz_completed: true,
+            writing_task_completed: true,
+        }))
+
+        const nextDayNum = (mission.day_number || 0) + 1
+        let resolvedNextUrl = '/dashboard/roadmap'
+
         try {
             const targetMissionId = mission.id
             const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetMissionId)
 
             if (isUUID) {
-                // Save completion for current mission
-                await supabase.from('user_mission_progress').upsert({
+                // 1. Mark current mission as completed
+                const { error: completeErr } = await supabase.from('user_mission_progress').upsert({
                     user_id: userId,
                     mission_id: targetMissionId,
                     status: 'completed',
@@ -170,42 +190,112 @@ export default function MissionClient({ mission, userId }: { mission: any; userI
                     coding_task_completed: true,
                     quiz_completed: true,
                     writing_task_completed: true
-                }, { onConflict: 'user_id, mission_id' })
-            }
+                }, { onConflict: 'user_id,mission_id' })
 
+                if (completeErr) console.error('Error saving completion:', completeErr)
 
+                // 2. Award XP
+                const { data: userData } = await supabase.from('users').select('total_xp, current_streak').eq('id', userId).single()
+                if (userData) {
+                    await supabase.from('users').update({
+                        total_xp: (userData.total_xp || 0) + (mission.xp_reward || 0),
+                        current_streak: (userData.current_streak || 0) + 1,
+                        last_mission_date: new Date().toISOString().split('T')[0],
+                        updated_at: new Date().toISOString()
+                    }).eq('id', userId)
+                }
 
-            const { data: userData } = await supabase.from('users').select('total_xp').eq('id', userId).single()
-            if (userData) {
-                await supabase.from('users').update({
-                    total_xp: (userData.total_xp || 0) + mission.xp_reward,
-                    updated_at: new Date().toISOString()
-                }).eq('id', userId)
-            }
+                // 3. Unlock next mission
+                if (nextDayNum <= 30) {
+                    const { data: nextMission } = await supabase
+                        .from('missions')
+                        .select('id, day_number, title')
+                        .eq('day_number', nextDayNum)
+                        .maybeSingle()
 
-            // Proactive Unlock of Next Mission (Days 1-30)
-            const nextDayNum = (mission.day_number || 0) + 1
-            if (nextDayNum <= 30) {
-                const { data: nextMission } = await supabase.from('missions').select('id').eq('day_number', nextDayNum).maybeSingle()
-
-                if (nextMission?.id) {
-                    await supabase.from('user_mission_progress').upsert({
-                        user_id: userId,
-                        mission_id: nextMission.id,
-                        status: 'available'
-                    }, { onConflict: 'user_id, mission_id' })
+                    if (nextMission?.id) {
+                        await supabase.from('user_mission_progress').upsert({
+                            user_id: userId,
+                            mission_id: nextMission.id,
+                            status: 'available',
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: 'user_id,mission_id' })
+                        resolvedNextUrl = `/dashboard/mission/${nextMission.id}`
+                    }
+                }
+            } else {
+                // Virtual mission — still try to find next real mission
+                if (nextDayNum <= 30) {
+                    const { data: nextMission } = await supabase
+                        .from('missions')
+                        .select('id')
+                        .eq('day_number', nextDayNum)
+                        .maybeSingle()
+                    if (nextMission?.id) {
+                        resolvedNextUrl = `/dashboard/mission/${nextMission.id}`
+                    } else {
+                        resolvedNextUrl = `/dashboard/mission/day-${nextDayNum}`
+                    }
                 }
             }
-
-
-            router.push('/dashboard')
         } catch (err) {
             console.error('Mission completion error:', err)
-            router.push('/dashboard')
         }
+
+        // Show completion screen regardless of DB save success
+        setNextMissionUrl(resolvedNextUrl)
+        setNextMissionDay(nextDayNum <= 30 ? nextDayNum : null)
+        setMissionCompleted(true)
     }
 
     if (!mounted) return null
+
+    // Mission Completion Celebration Screen
+    if (missionCompleted) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-primary-50 to-success-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
+                    <div className="text-6xl mb-4">🎉</div>
+                    <div className="w-16 h-16 bg-success-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Trophy className="w-8 h-8 text-success-600" />
+                    </div>
+                    <h1 className="text-2xl font-black text-gray-900 mb-2">Mission Complete!</h1>
+                    <p className="text-gray-500 mb-2">
+                        Day {mission.day_number} — <span className="font-semibold text-gray-700">{mission.title}</span>
+                    </p>
+                    <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2 rounded-full font-bold mb-6">
+                        <Star className="w-4 h-4 fill-current" />
+                        +{mission.xp_reward} XP Earned
+                    </div>
+
+                    <div className="space-y-3">
+                        {nextMissionDay && nextMissionUrl && (
+                            <button
+                                onClick={() => router.push(nextMissionUrl!)}
+                                className="w-full btn btn-primary flex items-center justify-center gap-2 text-base py-3"
+                            >
+                                <Play className="w-4 h-4" />
+                                Start Day {nextMissionDay}
+                                <ChevronRight className="w-4 h-4" />
+                            </button>
+                        )}
+                        <button
+                            onClick={() => router.push('/dashboard/roadmap')}
+                            className="w-full btn bg-white border-2 border-gray-200 text-gray-700 hover:border-primary-300 hover:text-primary-600 flex items-center justify-center gap-2"
+                        >
+                            View Full Roadmap
+                        </button>
+                        <button
+                            onClick={() => router.push('/dashboard')}
+                            className="w-full text-sm text-gray-400 hover:text-gray-600 py-2"
+                        >
+                            Back to Dashboard
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )
+    }
 
     try {
         const completedCount = steps.filter(s => s.completed).length
