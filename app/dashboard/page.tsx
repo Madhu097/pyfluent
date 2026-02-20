@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 import DashboardClient from './DashboardClient'
@@ -10,6 +10,7 @@ import DashboardLoading from './loading'
 export default function DashboardPage() {
     const { user, loading: authLoading } = useAuth()
     const router = useRouter()
+    const pathname = usePathname()
     const [data, setData] = useState<any>(null)
     const [dataLoading, setDataLoading] = useState(true)
 
@@ -169,7 +170,7 @@ export default function DashboardPage() {
         }
 
         fetchData()
-    }, [user, authLoading])
+    }, [user, authLoading, pathname])
 
     if (authLoading || dataLoading) return <DashboardLoading />
     if (!data) return <DashboardLoading />

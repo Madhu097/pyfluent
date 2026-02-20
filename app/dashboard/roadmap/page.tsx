@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 import RoadmapClient from './RoadmapClient'
@@ -10,6 +10,7 @@ import RoadmapLoading from './loading'
 export default function RoadmapPage() {
     const { user, loading: authLoading } = useAuth()
     const router = useRouter()
+    const pathname = usePathname()
     const [missions, setMissions] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
 
@@ -116,7 +117,7 @@ export default function RoadmapPage() {
         }
 
         fetchMissions()
-    }, [user, authLoading])
+    }, [user, authLoading, pathname])
 
     if (authLoading || loading) return <RoadmapLoading />
 

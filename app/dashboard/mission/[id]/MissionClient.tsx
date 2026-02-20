@@ -271,7 +271,7 @@ export default function MissionClient({ mission, userId }: { mission: any; userI
                     <div className="space-y-3">
                         {nextMissionDay && nextMissionUrl && (
                             <button
-                                onClick={() => router.push(nextMissionUrl!)}
+                                onClick={() => { window.location.href = nextMissionUrl! }}
                                 className="w-full btn btn-primary flex items-center justify-center gap-2 text-base py-3"
                             >
                                 <Play className="w-4 h-4" />
@@ -280,13 +280,13 @@ export default function MissionClient({ mission, userId }: { mission: any; userI
                             </button>
                         )}
                         <button
-                            onClick={() => router.push('/dashboard/roadmap')}
+                            onClick={() => { window.location.href = '/dashboard/roadmap' }}
                             className="w-full btn bg-white border-2 border-gray-200 text-gray-700 hover:border-primary-300 hover:text-primary-600 flex items-center justify-center gap-2"
                         >
                             View Full Roadmap
                         </button>
                         <button
-                            onClick={() => router.push('/dashboard')}
+                            onClick={() => { window.location.href = '/dashboard' }}
                             className="w-full text-sm text-gray-400 hover:text-gray-600 py-2"
                         >
                             Back to Dashboard
